@@ -1511,7 +1511,7 @@ vector<string> TideSearchApplication::getOptions() const {
     "evidence-granularity",
     "pepxml-output",
     "pin-output",
-    "pm-charge",
+    "pm-charges",
     "pm-max-frag-mz",
     "pm-max-precursor-delta-ppm",
     "pm-max-precursor-mz",
@@ -1914,8 +1914,8 @@ void TideSearchApplication::processParams() {
                        "units. Please re-run with auto-precursor-window set to 'false' or "
                        "precursor-window-type set to 'ppm'.");
     }
-    ParamMedicErrorCalculator errCalc;
-    errCalc.processFiles(Params::GetStrings("tide spectra file"));
+    ParamMedic::ErrorCalc errCalc;
+    ParamMedic::processSpectra(Params::GetStrings("tide spectra file"), &errCalc);
     string precursorFailure, fragmentFailure;
     double precursorSigmaPpm = 0;
     double fragmentSigmaPpm = 0;

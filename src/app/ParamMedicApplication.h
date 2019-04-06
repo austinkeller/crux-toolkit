@@ -1,14 +1,15 @@
-#ifndef PARAMMEDIC_H
-#define PARAMMEDIC_H
+#ifndef PARAM_MEDIC_APPLICATION_H
+#define PARAM_MEDIC_APPLICATION_H
 
 #include "CruxApplication.h"
-#include "Spectrum.h"
+#include "model/Spectrum.h"
 
 class ParamMedicApplication : public CruxApplication {
  public:
   ParamMedicApplication();
   virtual ~ParamMedicApplication();
   virtual int main(int argc, char** argv);
+  static void processFiles(const std::vector<std::string>& files);
   virtual std::string getName() const;
   virtual std::string getDescription() const;
   virtual bool hidden() const;
@@ -18,17 +19,68 @@ class ParamMedicApplication : public CruxApplication {
   virtual bool needsOutputDirectory() const;
 };
 
-class ParamMedicErrorCalculator {
+namespace ParamMedic {
+
+class Modification {
  public:
-  ParamMedicErrorCalculator();
-  virtual ~ParamMedicErrorCalculator();
+  Modification();
+  Modification(const std::string& location, double massDiff, bool isVariable);
+  Modification(const Modification& other);
+  virtual ~Modification();
 
-  void processFiles(const std::vector<std::string>& files);
-  void processSpectrum(Crux::Spectrum* spectrum);
-  void clearBins();
+  friend void swap(Modification& x, Modification& y);
+  Modification& operator=(Modification rhs);
 
-  // this is to be run after all spectra have been processed;
-  // fits the mixed model to the mixed distributions of m/z differences
+  std::string getLocation() const;
+  double getMassDiff() const;
+  std::string str() const;
+
+  static const std::string LOCATION_NTERM;
+  static const std::string LOCATION_CTERM;
+ private:
+  std::string location_;
+  double massDiff_;
+  bool variable_;
+};
+
+class RunAttributeResult {
+ public:
+  RunAttributeResult();
+  virtual ~RunAttributeResult();
+  std::string getValue(const std::string& name) const;
+  void setValue(const std::string& name, const std::string& value);
+  void addMod(const std::string& location, double massDiff, bool isVariable);
+  const std::vector<Modification>& getMods() const;
+  static const std::string ERROR;
+ private:
+  // modifications recommended as a result of analysis
+  std::vector<Modification> modifications_;
+  // name-value pairs to output that summarize the analysis
+  std::map<std::string, std::string> nameValuePairs_;
+};
+
+class RunAttributeDetector {
+ public:
+  virtual void processSpectrum(
+    const Crux::Spectrum* spectrum,
+    const std::vector<FLOAT_T>& binnedSpectrum) = 0;
+  virtual void nextFile() {}
+  virtual RunAttributeResult summarize() const { return RunAttributeResult(); }
+};
+
+class PerChargeErrorCalc;
+
+class ErrorCalc : public RunAttributeDetector {
+ public:
+  ErrorCalc();
+  ~ErrorCalc();
+
+  void processSpectrum(
+    const Crux::Spectrum* spectrum,
+    const std::vector<FLOAT_T>& binnedSpectrum);
+
+  void nextFile();
+
   void calcMassErrorDist(
     std::string* precursorFailure,
     std::string* fragmentFailure,
@@ -36,35 +88,57 @@ class ParamMedicErrorCalculator {
     double* fragmentSigmaPpm,
     double* precursorPredictionPpm,
     double* fragmentPredictionTh
-  );
+  ) const;
 
-  // estimate mu and sigma of the mixed distribution, as initial estimate for Gaussian
-  static void estimateMuSigma(
-    const std::vector<double>& data,
-    double minSigma,
-    double* muFit,
-    double* sigmaFit
-  );
+  RunAttributeResult summarize() const;
+
+ private:
+  std::map<int, PerChargeErrorCalc*> calcs_;
+  int numTotalSpectra_;
+};
+
+class PerChargeErrorCalc : public RunAttributeDetector {
+ public:
+  PerChargeErrorCalc(int charge);
+  ~PerChargeErrorCalc();
+
+  void processSpectrum(
+    const Crux::Spectrum* spectrum,
+    const std::vector<FLOAT_T>& binnedSpectrum);
+  void clearBins();
+  void nextFile();
+
+  int getNumPassingSpectra() const;
+  int getNumSpectraSameBin() const;
+  int getNumSpectraWithinPpm() const;
+  int getNumSpectraWithinPpmAndScans() const;
+  int getNumMultipleFragBins() const;
+  int getNumSingleFragBins() const;
+  const std::vector< std::pair<Peak, Peak> >& getPairedFragmentPeaks() const;
+  const std::vector< std::pair<double, double> >& getPairedPrecursorMzs() const;
+
  protected:
-  int getBinIndexPrecursor(double mz) const;
-  int getBinIndexFragment(double mz) const;
+  int getBinIndexPrecursor(double mz);
+  int getBinIndexFragment(double mz);
   double getPrecursorMz(const Crux::Spectrum* spectrum) const;
 
   // given two spectra, pair up their fragments that are in the same bin
-  std::vector< std::pair<const Peak*, const Peak*> > pairFragments(
-    const Crux::Spectrum* prev,
-    const Crux::Spectrum* cur
+  std::vector< std::pair<Peak, Peak> > pairFragments(
+    const std::vector<Peak>& prev,
+    const std::vector<Peak>& cur
   );
 
   // keep only one fragment per bin; if another fragment wants to be in the bin,
   // toss them both out - this reduces ambiguity
-  std::map<int, const Peak*> binFragments(const Crux::Spectrum* spectrum);
+  std::map<int, Peak> binFragments(const std::vector<Peak>& peaks);
 
   static bool sortPairedFragments(
-    const std::pair<const Peak*, const Peak*> x,
-    const std::pair<const Peak*, const Peak*> y
+    const std::pair<Peak, Peak>& x,
+    const std::pair<Peak, Peak>& y
   );
 
+  int charge_;
+  int chargeForBinSize_;
   // count the spectra that go by
   int numTotalSpectra_;
   int numPassingSpectra_;
@@ -72,23 +146,19 @@ class ParamMedicErrorCalculator {
   int numSpectraWithinPpm_;
   int numSpectraWithinPpmAndScans_;
   // number and position of bins
-  double lowestPrecursorBinStartMz_;
-  double lowestFragmentBinStartMz_;
-  int numPrecursorBins_;
-  int numFragmentBins_;
   int numMultipleFragBins_;
   int numSingleFragBins_;
   // map from bin index to current spectrum
-  std::map<int, Crux::Spectrum*> spectra_;
+  std::map< int, std::pair< const Crux::Spectrum*, std::vector<Peak> > > spectra_;
   // the paired peak values that we'll use to estimate mass error
-  std::vector< std::pair<const Peak*, const Peak*> > pairedFragmentPeaks_;
+  std::vector< std::pair<Peak, Peak> > pairedFragmentPeaks_;
   std::vector< std::pair<double, double> > pairedPrecursorMzs_;
 };
 
-class ParamMedicModel {
+class Model {
  public:
-  ParamMedicModel(double nMean, double nStd, double nMinStd, double uStart, double uEnd);
-  virtual ~ParamMedicModel();
+  Model(double nMean, double nStd, double nMinStd, double uStart, double uEnd);
+  virtual ~Model();
 
   // fit the model to new data using EM.
   // this method fits the components of the model to new data using the EM method.
@@ -164,6 +234,26 @@ class ParamMedicModel {
   double weights_[2];
   double summaries_[2];
 };
+
+// estimate mu and sigma of the mixed distribution, as initial estimate for Gaussian
+static void estimateMuSigma(
+  const std::vector<double>& data,
+  double minSigma,
+  double* muFit,
+  double* sigmaFit
+);
+
+int calcBinIndexMassPrecursor(double mass);
+int calcBinIndexMzFragment(double mz);
+double calcMH(double mz, int charge);
+std::vector<FLOAT_T> binSpectrum(const Crux::Spectrum* spectrum);
+int processSpectra(
+  const std::vector<std::string>& files,
+  std::vector<RunAttributeDetector*> detectors);
+int processSpectra(
+  const std::vector<std::string>& files,
+  RunAttributeDetector* detector);
+}
 
 #endif
 

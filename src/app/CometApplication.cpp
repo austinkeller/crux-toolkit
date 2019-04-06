@@ -443,7 +443,7 @@ vector<string> CometApplication::getOptions() const {
     "pm-max-frag-mz",
     "pm-min-scan-frag-peaks",
     "pm-max-precursor-delta-ppm",
-    "pm-charge",
+    "pm-charges",
     "pm-top-n-frag-peaks",
     "pm-pair-top-n-frag-peaks",
     "pm-min-common-frag-peaks",
@@ -502,8 +502,8 @@ void CometApplication::processParams() {
                        "units. Please rerun with either auto_peptide_mass_tolerance set to 'false' "
                        "or peptide_mass_units set to '2'.");
     }
-    ParamMedicErrorCalculator errCalc;
-    errCalc.processFiles(Params::GetStrings("input spectra"));
+    ParamMedic::ErrorCalc errCalc;
+    ParamMedic::processSpectra(Params::GetStrings("input spectra"), &errCalc);
     string precursorFailure, fragmentFailure;
     double precursorSigmaPpm = 0;
     double fragmentSigmaPpm = 0;
