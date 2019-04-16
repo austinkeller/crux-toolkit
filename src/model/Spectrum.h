@@ -125,6 +125,10 @@ class Spectrum{
    */
   PeakIterator end() const;
 
+  const Peak* getPeak(size_t i);
+
+  std::vector<Peak> getPeaks() const;
+
   /**
    * Prints a spectrum object to file.
    */
@@ -265,7 +269,7 @@ class Spectrum{
   /**
    * \returns The sum of intensities in all peaks.
    */
-  double getTotalEnergy();
+  double getTotalEnergy() const;
 
   /**
    * Sets the total ion current.
